@@ -35,9 +35,6 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
     Returns:
         Dictionary with matching statistics
     """
-    print("\n" + "="*60)
-    print("Starting AIS Matching Workflow")
-    print("="*60)
     
     # Group detections by file
     detections_by_file = {}
@@ -52,8 +49,6 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
         provider = create_ais_provider()
         matcher = AISMatcher(provider)
     except Exception as e:
-        print(f"Error creating AIS provider: {e}")
-        print("Skipping AIS matching. Set AIS_API_KEY or configure provider.")
         return {"matched": 0, "unknown": len(geo_detections), "error": str(e)}
     
     # Match detections for each file
@@ -81,7 +76,6 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
         ship_detections = [det for det in detections if str(det.get('label', '')).lower() == 'ship']
         
         if not ship_detections:
-            print(f"  No ship detections in {filename}, skipping AIS matching")
             continue
         
         # Use only ship detections for AIS matching
@@ -90,12 +84,7 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
         # Parse timestamp from filename
         start_time, end_time = parse_filename_datetime(filename)
         if start_time is None or end_time is None:
-            print(f"Warning: Could not parse timestamp from {filename}, skipping AIS matching")
             continue
-        
-        print(f"\nProcessing {filename}")
-        print(f"  Time range: {start_time} to {end_time}")
-        print(f"  Ship detections: {len(detections)}")
         
         # Match detections
         matches = matcher.match_detections(detections, filename, start_time, end_time)
@@ -149,13 +138,6 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
                     ais_matched=False
                 )
                 total_unknown += 1
-    
-    print("\n" + "="*60)
-    print("AIS Matching Complete (Ships Only)")
-    print("="*60)
-    print(f"Identified (matched): {total_matched}")
-    print(f"Unknown (no match): {total_unknown}")
-    print(f"Total ships processed: {total_matched + total_unknown}")
     
     return {
         "matched": total_matched,
