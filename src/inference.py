@@ -4,9 +4,10 @@ import rasterio
 import numpy as np
 from PIL import Image
 from shapely.geometry import box
+from rasterio.warp import transform as transform_coords
 from sahi.predict import get_sliced_prediction
 from tqdm import tqdm
-from .config import SLICE_HEIGHT, SLICE_WIDTH, OVERLAP_HEIGHT_RATIO, VERBOSE
+from .config import SLICE_HEIGHT, SLICE_WIDTH, OVERLAP_HEIGHT_RATIO, VERBOSE, DST_CRS
 
 def run_inference(image_paths, detection_model, analytics_callbacks=None):
     """
@@ -35,6 +36,7 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
         # Open and Read
         with rasterio.open(path) as src:
             img = src.read([1, 2, 3]).transpose(1, 2, 0)
+            src_crs = src.crs
             transform = src.transform
 
         # Normalize
@@ -59,11 +61,20 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
             x1, y1 = transform * (det.bbox.minx, det.bbox.miny)
             x2, y2 = transform * (det.bbox.maxx, det.bbox.maxy)
 
+            # Calculate centroid in source CRS
+            cx = (x1 + x2) / 2
+            cy = (y1 + y2) / 2
+
+            # Transform to lat/lon (EPSG:4326)
+            lon, lat = transform_coords(src_crs, DST_CRS, [cx], [cy])
+
             geo_detections.append({
                 'geometry': box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)),
                 'label': det.category.name,
                 'score': round(det.score.value, 2),
-                'file': os.path.basename(path)
+                'file': os.path.basename(path),
+                'latitude': lat[0],
+                'longitude': lon[0]
             })
         
         # Run analytics callbacks
@@ -80,4 +91,3 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
     print(f"Total inference time: {total_inference_time:.2f} seconds")
     
     return geo_detections, inference_cache
-
