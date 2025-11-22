@@ -16,8 +16,16 @@ from sahi.utils.cv import visualize_object_predictions
 from .config import DST_CRS, MAPS_OUTPUT_DIR
 from .utils import parse_filename_datetime
 
-def plot_results(image_paths, inference_cache, max_plots=10):
-    """Plots detections for a subset of images."""
+def plot_results(image_paths, inference_cache, max_plots=10, output_file=None):
+    """
+    Plots detections for a subset of images and saves to file (non-blocking).
+    
+    Args:
+        image_paths: List of image file paths
+        inference_cache: Dictionary mapping image paths to inference results
+        max_plots: Maximum number of images to plot
+        output_file: Path to save the plot. If None, saves to 'detection_plots.png'
+    """
     subset_paths = image_paths[:max_plots]
     
     # Calculate grid dimensions
@@ -60,7 +68,14 @@ def plot_results(image_paths, inference_cache, max_plots=10):
         axes[j].axis('off')
 
     plt.tight_layout()
-    plt.show()
+    
+    # Save plot to file instead of showing (non-blocking)
+    if output_file is None:
+        output_file = "detection_plots.png"
+    
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"Plot saved to {output_file}")
+    plt.close(fig)  # Close figure to free memory
 
 def group_images_by_day(image_paths):
     """
@@ -230,13 +245,33 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
         gdf = gpd.GeoDataFrame(geo_detections, crs=source_crs)
         gdf = gdf.to_crs(epsg=4326)
 
+        # Color mapping for different object types
+        def get_color_for_label(label):
+            """Get color for different object types."""
+            color_map = {
+                'ship': 'blue',
+                'vessel': 'blue',
+                'boat': 'cyan',
+                'building': 'orange',
+                'car': 'yellow',
+                'truck': 'purple',
+                'airplane': 'pink',
+                'helicopter': 'magenta',
+            }
+            # Normalize label to lowercase for matching
+            label_lower = str(label).lower()
+            # Check for partial matches (e.g., "ship" in "cargo ship")
+            for key, color in color_map.items():
+                if key in label_lower:
+                    return color
+            # Default color for unknown types
+            return 'red'
+
         def get_color(feature):
-            """Color-code by AIS match status: green for identified, red for unknown."""
+            """Color-code by object type (label)."""
             props = feature['properties']
-            if props.get('ais_matched', False):
-                return 'green'  # Identified ship
-            else:
-                return 'red'  # Unknown ship
+            label = props.get('label', 'unknown')
+            return get_color_for_label(label)
         
         def get_tooltip_fields(feature):
             """Build tooltip text with AIS information if available."""
@@ -301,15 +336,21 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
             )
         ).add_to(m)
         
-        # Add legend
-        legend_html = '''
+        # Add legend with object types
+        # Get unique labels from detections
+        unique_labels = gdf['label'].unique() if 'label' in gdf.columns else []
+        legend_items = []
+        for label in sorted(unique_labels):
+            color = get_color_for_label(label)
+            legend_items.append(f'<p><i class="fa fa-circle" style="color:{color}"></i> {label}</p>')
+        
+        legend_html = f'''
         <div style="position: fixed; 
-                    bottom: 50px; left: 50px; width: 200px; height: 90px; 
+                    bottom: 50px; left: 50px; width: 200px; height: auto; max-height: 400px; overflow-y: auto;
                     background-color: white; border:2px solid grey; z-index:9999; 
                     font-size:14px; padding: 10px">
-        <h4>Ship Status</h4>
-        <p><i class="fa fa-circle" style="color:green"></i> Identified (AIS matched)</p>
-        <p><i class="fa fa-circle" style="color:red"></i> Unknown (no AIS match)</p>
+        <h4>Object Types</h4>
+        {''.join(legend_items)}
         </div>
         '''
         m.get_root().html.add_child(folium.Element(legend_html))
