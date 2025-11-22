@@ -77,6 +77,16 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
         
         detections = detections_by_file[filename]
         
+        # Filter to only process detections with label 'ship'
+        ship_detections = [det for det in detections if str(det.get('label', '')).lower() == 'ship']
+        
+        if not ship_detections:
+            print(f"  No ship detections in {filename}, skipping AIS matching")
+            continue
+        
+        # Use only ship detections for AIS matching
+        detections = ship_detections
+        
         # Parse timestamp from filename
         start_time, end_time = parse_filename_datetime(filename)
         if start_time is None or end_time is None:
@@ -85,7 +95,7 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
         
         print(f"\nProcessing {filename}")
         print(f"  Time range: {start_time} to {end_time}")
-        print(f"  Detections: {len(detections)}")
+        print(f"  Ship detections: {len(detections)}")
         
         # Match detections
         matches = matcher.match_detections(detections, filename, start_time, end_time)
@@ -141,11 +151,11 @@ def match_detections_with_ais(run_id: str, geo_detections: List[Dict], files: Li
                 total_unknown += 1
     
     print("\n" + "="*60)
-    print("AIS Matching Complete")
+    print("AIS Matching Complete (Ships Only)")
     print("="*60)
     print(f"Identified (matched): {total_matched}")
     print(f"Unknown (no match): {total_unknown}")
-    print(f"Total: {total_matched + total_unknown}")
+    print(f"Total ships processed: {total_matched + total_unknown}")
     
     return {
         "matched": total_matched,
