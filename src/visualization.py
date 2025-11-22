@@ -74,6 +74,22 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
 
     m = folium.Map(location=center, zoom_start=18, tiles='Esri.WorldImagery')
 
+    # Inject the pixelated style once to avoid repetition
+    pixelated_style = """
+        <style>
+            .leaflet-image-layer {
+                /* old android/safari*/
+                image-rendering: -webkit-optimize-contrast;
+                image-rendering: crisp-edges; /* safari */
+                image-rendering: pixelated; /* chrome */
+                image-rendering: -moz-crisp-edges; /* firefox */
+                image-rendering: -o-crisp-edges; /* opera */
+                -ms-interpolation-mode: nearest-neighbor; /* ie */
+            }
+        </style>
+    """
+    m.get_root().header.add_child(folium.Element(pixelated_style))
+
     print(f"Adding {len(image_paths)} images to map...")
     for i, tiff_path in enumerate(image_paths):
         try:
@@ -123,7 +139,8 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
                 folium.raster_layers.ImageOverlay(
                     image=f"data:image/png;base64,{encoded}",
                     bounds=bounds,
-                    name=f"Image {i}"
+                    name=f"Image {i}",
+                    pixelated=False
                 ).add_to(m)
         except Exception as e:
             print(f"Failed to add image {tiff_path} to map: {e}")
