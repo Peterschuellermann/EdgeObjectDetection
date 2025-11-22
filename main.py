@@ -22,7 +22,7 @@ def main():
     # 4. Run Inference
     # Select a subset of files for demonstration as in the notebook
     folder = LOCAL_DIR
-    files = sorted(glob.glob(os.path.join(folder, "*.tif")))[:10]
+    files = sorted(glob.glob(os.path.join(folder, "*.tif")))[:100]
     
     geo_detections, inference_cache = run_inference(files, model)
 
