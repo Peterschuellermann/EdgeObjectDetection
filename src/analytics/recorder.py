@@ -38,8 +38,12 @@ class DetectionRecorder:
             cy = (y1 + y2) / 2
             
             # Transform to lat/lon (EPSG:4326)
-            # Use always_xy=True to ensure (longitude, latitude) order
-            lon, lat = transform_coords(src_crs, DST_CRS, [cx], [cy], always_xy=True)
+            # Try with always_xy=True (rasterio >= 1.3.0), fall back to old API if not supported
+            try:
+                lon, lat = transform_coords(src_crs, DST_CRS, [cx], [cy], always_xy=True)
+            except TypeError:
+                # Older rasterio version - transform returns (lat, lon) for EPSG:4326, so swap
+                lat, lon = transform_coords(src_crs, DST_CRS, [cy], [cx])
             
             # Extract other fields
             label = det.category.name
