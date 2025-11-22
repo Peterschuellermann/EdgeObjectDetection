@@ -383,31 +383,7 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
         '''
         m.get_root().html.add_child(folium.Element(legend_html))
         
-        # Add label filter UI and JavaScript
-        unique_labels_list = sorted(unique_labels.tolist()) if len(unique_labels) > 0 else []
-        # Default to only "ship" being checked if it exists, otherwise check all
-        default_checked_labels = ['ship'] if 'ship' in unique_labels_list else unique_labels_list
-        filter_checkboxes = '\n'.join([
-            f'<label style="display: block; margin: 5px 0;"><input type="checkbox" class="label-filter" value="{label}" {"checked" if label in default_checked_labels else ""}> {label}</label>'
-            for label in unique_labels_list
-        ])
-        
-        filter_html = f'''
-        <div id="label-filter-panel" style="position: fixed; 
-                    top: 50px; right: 50px; width: 200px; height: auto; max-height: 400px; overflow-y: auto;
-                    background-color: white; border:2px solid grey; z-index:9999; 
-                    font-size:14px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
-        <h4 style="margin-top: 0;">Filter by Label</h4>
-        <button id="select-all-labels" style="margin-bottom: 10px; padding: 5px 10px;">Select All</button>
-        <button id="deselect-all-labels" style="margin-bottom: 10px; padding: 5px 10px;">Deselect All</button>
-        <div id="label-checkboxes">
-        {filter_checkboxes}
-        </div>
-        </div>
-        '''
-        m.get_root().html.add_child(folium.Element(filter_html))
-        
-        # Add JavaScript for filtering
+        # Add JavaScript for filtering based on dashboard selected labels
         filter_js = '''
         <script>
         (function() {
@@ -497,76 +473,57 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
                     return detectionsLayer;
                 }
                 
-                // Try multiple times to find the layer
+                // Filter detections based on dashboard selected labels
+                function filterDetections() {
+                    // Get selected labels from dashboard (injected by dashboard.py)
+                    var selectedLabels = window.DASHBOARD_SELECTED_LABELS || [];
+                    
+                    if (!detectionsLayer) return;
+                    
+                    detectionsLayer.eachLayer(function(layer) {
+                        if (layer.feature && layer.feature.properties) {
+                            var label = layer.feature.properties.label || '';
+                            // Show if no labels selected (show all) or if label is in selected list
+                            if (selectedLabels.length === 0 || selectedLabels.includes(label)) {
+                                if (layer._path) {
+                                    layer.setStyle({opacity: 1, fillOpacity: 0.3});
+                                } else {
+                                    layer.setOpacity(1);
+                                }
+                            } else {
+                                if (layer._path) {
+                                    layer.setStyle({opacity: 0, fillOpacity: 0});
+                                } else {
+                                    layer.setOpacity(0);
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Try multiple times to find the layer and apply filter
                 var attempts = 0;
                 var findLayerInterval = setInterval(function() {
                     detectionsLayer = findDetectionsLayer();
                     if (detectionsLayer || attempts++ > 10) {
                         clearInterval(findLayerInterval);
                         if (detectionsLayer) {
-                            setupFiltering();
+                            // Apply filter immediately
+                            filterDetections();
+                            
+                            // Also watch for changes to DASHBOARD_SELECTED_LABELS
+                            // (in case the dashboard updates it)
+                            var lastLabels = JSON.stringify(window.DASHBOARD_SELECTED_LABELS || []);
+                            setInterval(function() {
+                                var currentLabels = JSON.stringify(window.DASHBOARD_SELECTED_LABELS || []);
+                                if (currentLabels !== lastLabels) {
+                                    lastLabels = currentLabels;
+                                    filterDetections();
+                                }
+                            }, 500);
                         }
                     }
                 }, 500);
-                
-                function setupFiltering() {
-                    var checkboxes = document.querySelectorAll('.label-filter');
-                    var selectAllBtn = document.getElementById('select-all-labels');
-                    var deselectAllBtn = document.getElementById('deselect-all-labels');
-                    
-                    function filterDetections() {
-                        var selectedLabels = Array.from(checkboxes)
-                            .filter(cb => cb.checked)
-                            .map(cb => cb.value);
-                        
-                        detectionsLayer.eachLayer(function(layer) {
-                            if (layer.feature && layer.feature.properties) {
-                                var label = layer.feature.properties.label || '';
-                                if (selectedLabels.length === 0 || selectedLabels.includes(label)) {
-                                    if (layer._path) {
-                                        layer.setStyle({opacity: 1, fillOpacity: 0.3});
-                                    } else {
-                                        layer.setOpacity(1);
-                                    }
-                                } else {
-                                    if (layer._path) {
-                                        layer.setStyle({opacity: 0, fillOpacity: 0});
-                                    } else {
-                                        layer.setOpacity(0);
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    
-                    // Add event listeners to checkboxes
-                    checkboxes.forEach(function(checkbox) {
-                        checkbox.addEventListener('change', filterDetections);
-                    });
-                    
-                    // Select all button
-                    if (selectAllBtn) {
-                        selectAllBtn.addEventListener('click', function() {
-                            checkboxes.forEach(function(cb) {
-                                cb.checked = true;
-                            });
-                            filterDetections();
-                        });
-                    }
-                    
-                    // Deselect all button
-                    if (deselectAllBtn) {
-                        deselectAllBtn.addEventListener('click', function() {
-                            checkboxes.forEach(function(cb) {
-                                cb.checked = false;
-                            });
-                            filterDetections();
-                        });
-                    }
-                    
-                    // Apply initial filter based on default checked state
-                    filterDetections();
-                }
             });
         })();
         </script>

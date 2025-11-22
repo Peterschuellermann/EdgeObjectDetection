@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import json
 from src.database import get_detections_df, init_db, get_unique_days
 from src.visualization import get_map_files
 from src.config import MAPS_OUTPUT_DIR
@@ -147,10 +148,32 @@ try:
                     
                     # Check if file exists
                     if os.path.exists(map_file_path):
-                        # Read and display the HTML map
+                        # Read the HTML map
                         with open(map_file_path, 'r', encoding='utf-8') as f:
                             map_html = f.read()
                         
+                        # Inject selected labels into the HTML for JavaScript filtering
+                        # Convert selected_labels to JSON string for JavaScript
+                        selected_labels_json = json.dumps(list(selected_labels))
+                        
+                        # Inject a script that sets the filter labels before the map loads
+                        filter_script = f'''
+                        <script>
+                        // Inject selected labels for filtering
+                        window.DASHBOARD_SELECTED_LABELS = {selected_labels_json};
+                        </script>
+                        '''
+                        
+                        # Insert the script right after the opening <head> tag or before </head>
+                        if '</head>' in map_html:
+                            map_html = map_html.replace('</head>', filter_script + '</head>')
+                        elif '<body' in map_html:
+                            map_html = map_html.replace('<body', filter_script + '<body')
+                        else:
+                            # If no head/body tags, prepend
+                            map_html = filter_script + map_html
+                        
+                        # Display the map (Streamlit will automatically rerun when labels change)
                         st.components.v1.html(map_html, height=600, scrolling=True)
                         
                         # Optionally filter detection table for this day
