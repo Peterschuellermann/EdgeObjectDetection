@@ -150,24 +150,89 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
         gdf = gpd.GeoDataFrame(geo_detections, crs=source_crs)
         gdf = gdf.to_crs(epsg=4326)
 
-        def get_color(label):
-            return '#' + hashlib.md5(str(label).encode()).hexdigest()[:6]
-
+        def get_color(feature):
+            """Color-code by AIS match status: green for identified, red for unknown."""
+            props = feature['properties']
+            if props.get('ais_matched', False):
+                return 'green'  # Identified ship
+            else:
+                return 'red'  # Unknown ship
+        
+        def get_tooltip_fields(feature):
+            """Build tooltip text with AIS information if available."""
+            props = feature['properties']
+            fields = ['label', 'score']
+            aliases = ['Object:', 'Confidence:']
+            
+            if props.get('ais_matched', False):
+                fields.extend(['ais_vessel_name', 'ais_mmsi', 'ais_vessel_type', 'ais_distance_m'])
+                aliases.extend(['Vessel Name:', 'MMSI:', 'Vessel Type:', 'Distance (m):'])
+            else:
+                fields.append('ais_matched')
+                aliases.append('Status:')
+            
+            return fields, aliases
+        
+        # Create tooltip with dynamic fields
+        tooltip_fields = ['label', 'score']
+        tooltip_aliases = ['Object:', 'Confidence:']
+        
+        # Check if any detection has AIS info to determine tooltip fields
+        # Also check if AIS columns exist in the GeoDataFrame
+        has_ais = any(det.get('ais_matched', False) for det in geo_detections)
+        gdf_has_ais = any(col.startswith('ais_') for col in gdf.columns)
+        
+        if has_ais or gdf_has_ais:
+            tooltip_fields = ['label', 'score']
+            tooltip_aliases = ['Object:', 'Confidence:']
+            # Add AIS fields if they exist in the dataframe
+            for field in ['ais_matched', 'ais_vessel_name', 'ais_mmsi', 'ais_vessel_type', 'ais_distance_m']:
+                if field in gdf.columns:
+                    tooltip_fields.append(field)
+                    if field == 'ais_matched':
+                        tooltip_aliases.append('AIS Matched:')
+                    elif field == 'ais_vessel_name':
+                        tooltip_aliases.append('Vessel Name:')
+                    elif field == 'ais_mmsi':
+                        tooltip_aliases.append('MMSI:')
+                    elif field == 'ais_vessel_type':
+                        tooltip_aliases.append('Vessel Type:')
+                    elif field == 'ais_distance_m':
+                        tooltip_aliases.append('Distance (m):')
+        
         folium.GeoJson(
             gdf,
             name="Detections",
             style_function=lambda x: {
-                'color': get_color(x['properties']['label']),
-                'weight': 2,
-                'fillOpacity': 0.2,
-                'fillColor': get_color(x['properties']['label'])
+                'color': get_color(x),
+                'weight': 3,
+                'fillOpacity': 0.3,
+                'fillColor': get_color(x)
             },
             tooltip=folium.GeoJsonTooltip(
-                fields=['label', 'score'],
-                aliases=['Object:', 'Confidence:'],
+                fields=tooltip_fields,
+                aliases=tooltip_aliases,
+                localize=True
+            ),
+            popup=folium.GeoJsonPopup(
+                fields=tooltip_fields,
+                aliases=tooltip_aliases,
                 localize=True
             )
         ).add_to(m)
+        
+        # Add legend
+        legend_html = '''
+        <div style="position: fixed; 
+                    bottom: 50px; left: 50px; width: 200px; height: 90px; 
+                    background-color: white; border:2px solid grey; z-index:9999; 
+                    font-size:14px; padding: 10px">
+        <h4>Ship Status</h4>
+        <p><i class="fa fa-circle" style="color:green"></i> Identified (AIS matched)</p>
+        <p><i class="fa fa-circle" style="color:red"></i> Unknown (no AIS match)</p>
+        </div>
+        '''
+        m.get_root().html.add_child(folium.Element(legend_html))
 
     folium.LayerControl().add_to(m)
     
