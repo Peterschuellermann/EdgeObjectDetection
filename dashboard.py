@@ -32,19 +32,46 @@ if df.empty:
     st.info("No detection data found. Run main.py to generate results.")
     st.stop()
 
+# Ensure timestamp is datetime type for proper sorting
+if 'timestamp' in df.columns:
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
 # Sidebar Filters
 st.sidebar.header("Filters")
 
-# Run ID Filter
-all_runs = df['run_id'].unique()
-selected_runs = st.sidebar.multiselect("Select Run ID", all_runs, default=all_runs)
+# Run ID Filter - default to latest run
+# Sort run IDs by newest first (based on max timestamp per run)
+if 'timestamp' in df.columns and not df['timestamp'].isna().all():
+    # Group by run_id and get max timestamp for each, then sort descending
+    run_timestamps = df.groupby('run_id')['timestamp'].max().sort_values(ascending=False)
+    all_runs = run_timestamps.index.tolist()
+    # Find latest run_id (first in the sorted list)
+    if len(all_runs) > 0:
+        latest_run = all_runs[0]
+        default_runs = [latest_run]
+    else:
+        default_runs = []
+else:
+    # Fallback: sort alphabetically if no timestamps available
+    all_runs = sorted(df['run_id'].unique())
+    if len(all_runs) > 0:
+        default_runs = [all_runs[-1]]
+    else:
+        default_runs = []
+
+selected_runs = st.sidebar.multiselect("Select Run ID", all_runs, default=default_runs)
 
 if selected_runs:
     df = df[df['run_id'].isin(selected_runs)]
 
-# Label Filter
-all_labels = df['label'].unique()
-selected_labels = st.sidebar.multiselect("Select Labels", all_labels, default=all_labels)
+# Label Filter - default to "ship" if available
+all_labels = sorted(df['label'].unique())
+if 'ship' in all_labels:
+    default_labels = ['ship']
+else:
+    default_labels = all_labels
+
+selected_labels = st.sidebar.multiselect("Select Labels", all_labels, default=default_labels)
 
 if selected_labels:
     df = df[df['label'].isin(selected_labels)]

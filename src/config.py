@@ -27,7 +27,8 @@ MAPS_OUTPUT_DIR = "maps"
 
 # AIS Configuration
 AIS_PROVIDER = "datalastic"  # Options: "datalastic", "local_csv"
-AIS_API_KEY = os.getenv("AIS_API_KEY", "")  # Set via environment variable or config
+# Read from environment variable, or use hardcoded value as fallback
+AIS_API_KEY = os.getenv("AIS_API_KEY", "9aac3244-93b4-491e-b7b0-b0bcd70df0de")
 ROTTERDAM_BBOX = {
     "min_lon": 4.0,
     "max_lon": 4.5,
