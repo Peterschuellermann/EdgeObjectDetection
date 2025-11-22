@@ -6,10 +6,11 @@ from PIL import Image
 from shapely.geometry import box
 from rasterio.warp import transform as transform_coords
 from sahi.predict import get_sliced_prediction
+from sahi.annotation import BoundingBox
 from tqdm import tqdm
 from .config import SLICE_HEIGHT, SLICE_WIDTH, OVERLAP_HEIGHT_RATIO, VERBOSE, DST_CRS
 
-def run_inference(image_paths, detection_model, analytics_callbacks=None):
+def run_inference(image_paths, detection_model, analytics_callbacks=None, inference_target_size=None):
     """
     Runs inference on a list of image paths.
     
@@ -18,12 +19,17 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
         detection_model: Loaded SAHI detection model.
         analytics_callbacks (list, optional): List of functions to call with detection results.
                                               Each callback should accept (image_path, result, img_array, transform).
+        inference_target_size (tuple, optional): Size to resize image to before inference (width, height).
+                                                 Defaults to (SLICE_WIDTH, SLICE_HEIGHT).
     
     Returns:
         tuple: (geo_detections, inference_cache)
     """
     if analytics_callbacks is None:
         analytics_callbacks = []
+
+    if inference_target_size is None:
+        inference_target_size = (SLICE_WIDTH, SLICE_HEIGHT)
 
     geo_detections = []
     inference_cache = {}
@@ -36,6 +42,7 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
         # Open and Read
         with rasterio.open(path) as src:
             img = src.read([1, 2, 3]).transpose(1, 2, 0)
+            orig_h, orig_w = img.shape[:2]
             src_crs = src.crs
             transform = src.transform
 
@@ -44,15 +51,34 @@ def run_inference(image_paths, detection_model, analytics_callbacks=None):
         img = np.clip((img - p2) / (p98 - p2) * 255.0, 0, 255).astype(np.uint8)
         img_contiguous = np.ascontiguousarray(img)
 
+        # Resize
+        pil_img = Image.fromarray(img_contiguous)
+        pil_img_resized = pil_img.resize(inference_target_size)
+        
+        scale_x = orig_w / inference_target_size[0]
+        scale_y = orig_h / inference_target_size[1]
+
         # Predict
         result = get_sliced_prediction(
-            Image.fromarray(img_contiguous), 
+            pil_img_resized, 
             detection_model,
             slice_height=SLICE_HEIGHT, 
             slice_width=SLICE_WIDTH, 
             overlap_height_ratio=OVERLAP_HEIGHT_RATIO, 
             verbose=VERBOSE
         )
+        
+        # Scale back detections to original image size
+        for det in result.object_prediction_list:
+            box_obj = det.bbox
+            # BoundingBox expects [minx, miny, maxx, maxy]
+            new_box = [
+                box_obj.minx * scale_x,
+                box_obj.miny * scale_y,
+                box_obj.maxx * scale_x,
+                box_obj.maxy * scale_y
+            ]
+            det.bbox = BoundingBox(new_box)
 
         inference_cache[path] = result
 
