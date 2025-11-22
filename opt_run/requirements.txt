@@ -1,0 +1,15 @@
+geopandas
+rasterio
+shapely
+folium
+ultralytics
+sahi
+boto3
+huggingface_hub
+matplotlib
+numpy
+psutil
+Pillow
+tqdm
+torch
+botocore
