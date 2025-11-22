@@ -158,3 +158,6 @@ rotterdam_opt/
 detection_map.html
 
 .DS_Store
+detection_plots.png
+detections.db
+maps/map_2019-08-04.html

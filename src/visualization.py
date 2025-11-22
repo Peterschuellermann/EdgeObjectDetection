@@ -268,9 +268,21 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
             return 'red'
 
         def get_color(feature):
-            """Color-code by object type (label)."""
+            """Color-code by object type (label) and AIS match status."""
             props = feature['properties']
             label = props.get('label', 'unknown')
+            ais_matched = props.get('ais_matched', False)
+            # Handle both boolean and integer (0/1) values
+            if isinstance(ais_matched, (int, float)):
+                ais_matched = bool(ais_matched)
+            
+            # Check if it's a ship/vessel/boat and AIS matched - make it green
+            label_lower = str(label).lower()
+            is_ship = any(key in label_lower for key in ['ship', 'vessel', 'boat'])
+            
+            if is_ship and ais_matched:
+                return 'green'
+            
             return get_color_for_label(label)
         
         def get_tooltip_fields(feature):
@@ -344,6 +356,21 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
             color = get_color_for_label(label)
             legend_items.append(f'<p><i class="fa fa-circle" style="color:{color}"></i> {label}</p>')
         
+        # Check if there are any AIS-matched ships
+        has_ais_ships = False
+        if 'ais_matched' in gdf.columns:
+            ship_labels = ['ship', 'vessel', 'boat']
+            for label in unique_labels:
+                label_lower = str(label).lower()
+                if any(ship in label_lower for ship in ship_labels):
+                    # Check for both boolean True and integer 1
+                    ais_matched_mask = (gdf['ais_matched'] == True) | (gdf['ais_matched'] == 1)
+                    if gdf[(gdf['label'] == label) & ais_matched_mask].shape[0] > 0:
+                        has_ais_ships = True
+                        break
+        
+        ais_note = '<p style="margin-top: 10px; font-size: 12px; color: #666;"><i class="fa fa-circle" style="color:green"></i> <strong>Green</strong> = AIS-matched ships</p>' if has_ais_ships else ''
+        
         legend_html = f'''
         <div style="position: fixed; 
                     bottom: 50px; left: 50px; width: 200px; height: auto; max-height: 400px; overflow-y: auto;
@@ -351,9 +378,157 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
                     font-size:14px; padding: 10px">
         <h4>Object Types</h4>
         {''.join(legend_items)}
+        {ais_note}
         </div>
         '''
         m.get_root().html.add_child(folium.Element(legend_html))
+        
+        # Add JavaScript for filtering based on dashboard selected labels
+        filter_js = '''
+        <script>
+        (function() {
+            // Wait for map to be fully loaded
+            window.addEventListener('load', function() {
+                // Find the detections layer
+                var detectionsLayer = null;
+                var map = null;
+                
+                // Find map by looking for Leaflet map instances
+                function findMap() {
+                    // Try common variable names
+                    if (window.map) {
+                        map = window.map;
+                        return map;
+                    }
+                    
+                    // Find map by looking for divs with leaflet-container class
+                    var mapDivs = document.querySelectorAll('.leaflet-container');
+                    if (mapDivs.length > 0) {
+                        // Try to find map instance from the div
+                        for (var i = 0; i < mapDivs.length; i++) {
+                            var div = mapDivs[i];
+                            // Check if div has a _leaflet_id
+                            if (div._leaflet_id !== undefined) {
+                                // Try to find the map in L._mapInstances or iterate through window
+                                for (var key in window) {
+                                    try {
+                                        var obj = window[key];
+                                        if (obj instanceof L.Map && obj.getContainer() === div) {
+                                            map = obj;
+                                            return map;
+                                        }
+                                    } catch(e) {}
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Last resort: find any L.Map instance
+                    if (window.L && L.Map) {
+                        for (var key in window) {
+                            try {
+                                if (window[key] instanceof L.Map) {
+                                    map = window[key];
+                                    return map;
+                                }
+                            } catch(e) {}
+                        }
+                    }
+                    
+                    return null;
+                }
+                
+                // Find detections layer
+                function findDetectionsLayer() {
+                    map = findMap();
+                    if (!map) return null;
+                    
+                    detectionsLayer = null;
+                    
+                    // Iterate through all layers
+                    map.eachLayer(function(layer) {
+                        if (layer instanceof L.GeoJSON) {
+                            var name = layer.options && layer.options.name;
+                            if (name === 'Detections' || (name && name.includes('Detection'))) {
+                                detectionsLayer = layer;
+                                return false; // break
+                            }
+                        }
+                    });
+                    
+                    // Also check _layers directly
+                    if (!detectionsLayer && map._layers) {
+                        for (var id in map._layers) {
+                            var layer = map._layers[id];
+                            if (layer instanceof L.GeoJSON) {
+                                var name = layer.options && layer.options.name;
+                                if (name === 'Detections' || (name && name.includes('Detection'))) {
+                                    detectionsLayer = layer;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return detectionsLayer;
+                }
+                
+                // Filter detections based on dashboard selected labels
+                function filterDetections() {
+                    // Get selected labels from dashboard (injected by dashboard.py)
+                    var selectedLabels = window.DASHBOARD_SELECTED_LABELS || [];
+                    
+                    if (!detectionsLayer) return;
+                    
+                    detectionsLayer.eachLayer(function(layer) {
+                        if (layer.feature && layer.feature.properties) {
+                            var label = layer.feature.properties.label || '';
+                            // Show if no labels selected (show all) or if label is in selected list
+                            if (selectedLabels.length === 0 || selectedLabels.includes(label)) {
+                                if (layer._path) {
+                                    layer.setStyle({opacity: 1, fillOpacity: 0.3});
+                                } else {
+                                    layer.setOpacity(1);
+                                }
+                            } else {
+                                if (layer._path) {
+                                    layer.setStyle({opacity: 0, fillOpacity: 0});
+                                } else {
+                                    layer.setOpacity(0);
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Try multiple times to find the layer and apply filter
+                var attempts = 0;
+                var findLayerInterval = setInterval(function() {
+                    detectionsLayer = findDetectionsLayer();
+                    if (detectionsLayer || attempts++ > 10) {
+                        clearInterval(findLayerInterval);
+                        if (detectionsLayer) {
+                            // Apply filter immediately
+                            filterDetections();
+                            
+                            // Also watch for changes to DASHBOARD_SELECTED_LABELS
+                            // (in case the dashboard updates it)
+                            var lastLabels = JSON.stringify(window.DASHBOARD_SELECTED_LABELS || []);
+                            setInterval(function() {
+                                var currentLabels = JSON.stringify(window.DASHBOARD_SELECTED_LABELS || []);
+                                if (currentLabels !== lastLabels) {
+                                    lastLabels = currentLabels;
+                                    filterDetections();
+                                }
+                            }, 500);
+                        }
+                    }
+                }, 500);
+            });
+        })();
+        </script>
+        '''
+        m.get_root().html.add_child(folium.Element(filter_js))
 
     folium.LayerControl().add_to(m)
     

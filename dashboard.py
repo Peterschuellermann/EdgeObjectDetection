@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import json
 from src.database import get_detections_df, init_db, get_unique_days
 from src.visualization import get_map_files
 from src.config import MAPS_OUTPUT_DIR
@@ -32,19 +33,46 @@ if df.empty:
     st.info("No detection data found. Run main.py to generate results.")
     st.stop()
 
+# Ensure timestamp is datetime type for proper sorting
+if 'timestamp' in df.columns:
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
 # Sidebar Filters
 st.sidebar.header("Filters")
 
-# Run ID Filter
-all_runs = df['run_id'].unique()
-selected_runs = st.sidebar.multiselect("Select Run ID", all_runs, default=all_runs)
+# Run ID Filter - default to latest run
+# Sort run IDs by newest first (based on max timestamp per run)
+if 'timestamp' in df.columns and not df['timestamp'].isna().all():
+    # Group by run_id and get max timestamp for each, then sort descending
+    run_timestamps = df.groupby('run_id')['timestamp'].max().sort_values(ascending=False)
+    all_runs = run_timestamps.index.tolist()
+    # Find latest run_id (first in the sorted list)
+    if len(all_runs) > 0:
+        latest_run = all_runs[0]
+        default_runs = [latest_run]
+    else:
+        default_runs = []
+else:
+    # Fallback: sort alphabetically if no timestamps available
+    all_runs = sorted(df['run_id'].unique())
+    if len(all_runs) > 0:
+        default_runs = [all_runs[-1]]
+    else:
+        default_runs = []
+
+selected_runs = st.sidebar.multiselect("Select Run ID", all_runs, default=default_runs)
 
 if selected_runs:
     df = df[df['run_id'].isin(selected_runs)]
 
-# Label Filter
-all_labels = df['label'].unique()
-selected_labels = st.sidebar.multiselect("Select Labels", all_labels, default=all_labels)
+# Label Filter - default to "ship" if available
+all_labels = sorted(df['label'].unique())
+if 'ship' in all_labels:
+    default_labels = ['ship']
+else:
+    default_labels = all_labels
+
+selected_labels = st.sidebar.multiselect("Select Labels", all_labels, default=default_labels)
 
 if selected_labels:
     df = df[df['label'].isin(selected_labels)]
@@ -120,10 +148,32 @@ try:
                     
                     # Check if file exists
                     if os.path.exists(map_file_path):
-                        # Read and display the HTML map
+                        # Read the HTML map
                         with open(map_file_path, 'r', encoding='utf-8') as f:
                             map_html = f.read()
                         
+                        # Inject selected labels into the HTML for JavaScript filtering
+                        # Convert selected_labels to JSON string for JavaScript
+                        selected_labels_json = json.dumps(list(selected_labels))
+                        
+                        # Inject a script that sets the filter labels before the map loads
+                        filter_script = f'''
+                        <script>
+                        // Inject selected labels for filtering
+                        window.DASHBOARD_SELECTED_LABELS = {selected_labels_json};
+                        </script>
+                        '''
+                        
+                        # Insert the script right after the opening <head> tag or before </head>
+                        if '</head>' in map_html:
+                            map_html = map_html.replace('</head>', filter_script + '</head>')
+                        elif '<body' in map_html:
+                            map_html = map_html.replace('<body', filter_script + '<body')
+                        else:
+                            # If no head/body tags, prepend
+                            map_html = filter_script + map_html
+                        
+                        # Display the map (Streamlit will automatically rerun when labels change)
                         st.components.v1.html(map_html, height=600, scrolling=True)
                         
                         # Optionally filter detection table for this day
