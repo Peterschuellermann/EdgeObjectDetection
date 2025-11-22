@@ -5,7 +5,7 @@ from src.utils import setup_logging, inspect_environment
 from src.data_loader import list_s3_files, download_files_parallel
 from src.model_handler import load_model
 from src.inference import run_inference
-from src.visualization import plot_results, create_map
+from src.visualization import plot_results, create_map, create_map_by_day
 from src.config import LOCAL_DIR
 from src.database import init_db
 from src.analytics.recorder import DetectionRecorder
@@ -130,7 +130,10 @@ def main():
     print("Generating plots...")
     plot_results(files, inference_cache)
     
-    print("Generating map...")
+    print("\nGenerating day-specific maps...")
+    day_to_filepath = create_map_by_day(files, geo_detections)
+    
+    print("\nGenerating combined map...")
     create_map(files, geo_detections, output_file="detection_map.html")
 
 if __name__ == "__main__":

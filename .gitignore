@@ -157,3 +157,4 @@ cython_debug/
 rotterdam_opt/
 detection_map.html
 
+.DS_Store

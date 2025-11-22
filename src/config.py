@@ -23,6 +23,7 @@ VERBOSE = 0
 
 # Visualization
 DST_CRS = 'EPSG:4326'
+MAPS_OUTPUT_DIR = "maps"
 
 # AIS Configuration
 AIS_PROVIDER = "datalastic"  # Options: "datalastic", "local_csv"

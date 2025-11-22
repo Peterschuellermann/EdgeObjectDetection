@@ -2,6 +2,8 @@ import os
 import io
 import base64
 import hashlib
+import glob
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 import rasterio
@@ -11,10 +13,19 @@ from PIL import Image
 import folium
 import geopandas as gpd
 from sahi.utils.cv import visualize_object_predictions
-from .config import DST_CRS
+from .config import DST_CRS, MAPS_OUTPUT_DIR
+from .utils import parse_filename_datetime
 
-def plot_results(image_paths, inference_cache, max_plots=10):
-    """Plots detections for a subset of images."""
+def plot_results(image_paths, inference_cache, max_plots=10, output_file=None):
+    """
+    Plots detections for a subset of images and saves to file (non-blocking).
+    
+    Args:
+        image_paths: List of image file paths
+        inference_cache: Dictionary mapping image paths to inference results
+        max_plots: Maximum number of images to plot
+        output_file: Path to save the plot. If None, saves to 'detection_plots.png'
+    """
     subset_paths = image_paths[:max_plots]
     
     # Calculate grid dimensions
@@ -57,9 +68,92 @@ def plot_results(image_paths, inference_cache, max_plots=10):
         axes[j].axis('off')
 
     plt.tight_layout()
-    plt.show()
+    
+    # Save plot to file instead of showing (non-blocking)
+    if output_file is None:
+        output_file = "detection_plots.png"
+    
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"Plot saved to {output_file}")
+    plt.close(fig)  # Close figure to free memory
 
-def create_map(image_paths, geo_detections, output_file="map.html"):
+def group_images_by_day(image_paths):
+    """
+    Groups image paths by day based on the date extracted from filenames.
+    
+    Args:
+        image_paths (list): List of image file paths
+        
+    Returns:
+        dict: Dictionary mapping day strings (YYYY-MM-DD) to lists of image paths
+    """
+    day_groups = {}
+    
+    for path in image_paths:
+        filename = os.path.basename(path)
+        start_dt, end_dt = parse_filename_datetime(filename)
+        
+        if start_dt is not None:
+            day_str = start_dt.strftime('%Y-%m-%d')
+            if day_str not in day_groups:
+                day_groups[day_str] = []
+            day_groups[day_str].append(path)
+        else:
+            # Handle images without parseable dates
+            if 'unknown' not in day_groups:
+                day_groups['unknown'] = []
+            day_groups['unknown'].append(path)
+    
+    return day_groups
+
+def get_map_files(output_dir=None):
+    """
+    Scans the maps directory for day-specific map files.
+    
+    Args:
+        output_dir (str, optional): Directory to scan. Defaults to MAPS_OUTPUT_DIR from config.
+        
+    Returns:
+        dict: Dictionary mapping day strings (YYYY-MM-DD) to file paths
+    """
+    if output_dir is None:
+        output_dir = MAPS_OUTPUT_DIR
+    
+    if not os.path.exists(output_dir):
+        return {}
+    
+    map_files = {}
+    pattern = os.path.join(output_dir, "map_*.html")
+    
+    for filepath in glob.glob(pattern):
+        filename = os.path.basename(filepath)
+        # Extract date from filename: map_YYYY-MM-DD.html
+        if filename.startswith("map_") and filename.endswith(".html"):
+            day_str = filename[4:-5]  # Remove "map_" prefix and ".html" suffix
+            # Validate date format
+            if len(day_str) == 10 and day_str.count('-') == 2:
+                map_files[day_str] = filepath
+    
+    return map_files
+
+def save_map_index(day_to_filepath, output_dir=None):
+    """
+    Saves a JSON index mapping days to map file paths.
+    
+    Args:
+        day_to_filepath (dict): Dictionary mapping day strings to file paths
+        output_dir (str, optional): Directory to save index. Defaults to MAPS_OUTPUT_DIR from config.
+    """
+    if output_dir is None:
+        output_dir = MAPS_OUTPUT_DIR
+    
+    os.makedirs(output_dir, exist_ok=True)
+    index_path = os.path.join(output_dir, "index.json")
+    
+    with open(index_path, 'w') as f:
+        json.dump(day_to_filepath, f, indent=2)
+
+def create_map(image_paths, geo_detections, output_file="map.html", day_label=None):
     """Creates a Folium map with image overlays and detection boxes."""
     if not image_paths:
         print("No images to map.")
@@ -136,10 +230,11 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
 
                 encoded = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
+                layer_name = f"Image {i}" if day_label is None else f"{day_label} - Image {i}"
                 folium.raster_layers.ImageOverlay(
                     image=f"data:image/png;base64,{encoded}",
                     bounds=bounds,
-                    name=f"Image {i}",
+                    name=layer_name,
                     pixelated=False
                 ).add_to(m)
         except Exception as e:
@@ -150,13 +245,33 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
         gdf = gpd.GeoDataFrame(geo_detections, crs=source_crs)
         gdf = gdf.to_crs(epsg=4326)
 
+        # Color mapping for different object types
+        def get_color_for_label(label):
+            """Get color for different object types."""
+            color_map = {
+                'ship': 'blue',
+                'vessel': 'blue',
+                'boat': 'cyan',
+                'building': 'orange',
+                'car': 'yellow',
+                'truck': 'purple',
+                'airplane': 'pink',
+                'helicopter': 'magenta',
+            }
+            # Normalize label to lowercase for matching
+            label_lower = str(label).lower()
+            # Check for partial matches (e.g., "ship" in "cargo ship")
+            for key, color in color_map.items():
+                if key in label_lower:
+                    return color
+            # Default color for unknown types
+            return 'red'
+
         def get_color(feature):
-            """Color-code by AIS match status: green for identified, red for unknown."""
+            """Color-code by object type (label)."""
             props = feature['properties']
-            if props.get('ais_matched', False):
-                return 'green'  # Identified ship
-            else:
-                return 'red'  # Unknown ship
+            label = props.get('label', 'unknown')
+            return get_color_for_label(label)
         
         def get_tooltip_fields(feature):
             """Build tooltip text with AIS information if available."""
@@ -221,15 +336,21 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
             )
         ).add_to(m)
         
-        # Add legend
-        legend_html = '''
+        # Add legend with object types
+        # Get unique labels from detections
+        unique_labels = gdf['label'].unique() if 'label' in gdf.columns else []
+        legend_items = []
+        for label in sorted(unique_labels):
+            color = get_color_for_label(label)
+            legend_items.append(f'<p><i class="fa fa-circle" style="color:{color}"></i> {label}</p>')
+        
+        legend_html = f'''
         <div style="position: fixed; 
-                    bottom: 50px; left: 50px; width: 200px; height: 90px; 
+                    bottom: 50px; left: 50px; width: 200px; height: auto; max-height: 400px; overflow-y: auto;
                     background-color: white; border:2px solid grey; z-index:9999; 
                     font-size:14px; padding: 10px">
-        <h4>Ship Status</h4>
-        <p><i class="fa fa-circle" style="color:green"></i> Identified (AIS matched)</p>
-        <p><i class="fa fa-circle" style="color:red"></i> Unknown (no AIS match)</p>
+        <h4>Object Types</h4>
+        {''.join(legend_items)}
         </div>
         '''
         m.get_root().html.add_child(folium.Element(legend_html))
@@ -240,4 +361,60 @@ def create_map(image_paths, geo_detections, output_file="map.html"):
     m.save(output_file)
     print(f"Map saved to {output_file}")
     return m
+
+def create_map_by_day(image_paths, geo_detections, output_dir=None):
+    """
+    Creates separate HTML maps for each day in the dataset.
+    
+    Args:
+        image_paths (list): List of image file paths
+        geo_detections (list): List of detection dictionaries with 'file' field
+        output_dir (str, optional): Directory to save maps. Defaults to MAPS_OUTPUT_DIR from config.
+        
+    Returns:
+        dict: Dictionary mapping day strings (YYYY-MM-DD) to file paths
+    """
+    if output_dir is None:
+        output_dir = MAPS_OUTPUT_DIR
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Group images by day
+    day_groups = group_images_by_day(image_paths)
+    
+    # Filter out 'unknown' day if it exists (or handle it separately)
+    day_to_filepath = {}
+    
+    for day_str, day_image_paths in day_groups.items():
+        if day_str == 'unknown':
+            # Skip images without parseable dates
+            print(f"Skipping {len(day_image_paths)} images with unparseable dates")
+            continue
+        
+        if not day_image_paths:
+            continue
+        
+        # Filter detections for this day
+        day_filenames = {os.path.basename(path) for path in day_image_paths}
+        day_detections = [
+            det for det in geo_detections 
+            if det.get('file') in day_filenames
+        ]
+        
+        # Create output filename
+        output_file = os.path.join(output_dir, f"map_{day_str}.html")
+        
+        # Create map for this day
+        print(f"\nCreating map for {day_str} ({len(day_image_paths)} images, {len(day_detections)} detections)...")
+        create_map(day_image_paths, day_detections, output_file=output_file, day_label=day_str)
+        
+        day_to_filepath[day_str] = output_file
+    
+    # Save index file
+    if day_to_filepath:
+        save_map_index(day_to_filepath, output_dir)
+        print(f"\nCreated {len(day_to_filepath)} day-specific maps in {output_dir}")
+    
+    return day_to_filepath
 

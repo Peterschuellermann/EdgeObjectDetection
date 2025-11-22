@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import os
 from datetime import datetime
+from .utils import parse_filename_datetime
 
 DB_PATH = "detections.db"
 
@@ -125,5 +126,31 @@ def get_detections_df():
     try:
         df = pd.read_sql_query("SELECT * FROM detections", conn)
         return df
+    finally:
+        conn.close()
+
+def get_unique_days():
+    """
+    Extract unique days from file names in the database.
+    
+    Returns:
+        list: Sorted list of unique day strings in YYYY-MM-DD format
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT file_name FROM detections")
+        rows = cursor.fetchall()
+        
+        days = set()
+        for row in rows:
+            filename = row[0]
+            start_dt, end_dt = parse_filename_datetime(filename)
+            if start_dt is not None:
+                day_str = start_dt.strftime('%Y-%m-%d')
+                days.add(day_str)
+        
+        # Return sorted list
+        return sorted(list(days))
     finally:
         conn.close()
