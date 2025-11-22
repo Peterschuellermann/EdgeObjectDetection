@@ -57,10 +57,6 @@ class AISMatcher:
         min_lon = min(lons) - 0.01
         max_lon = max(lons) + 0.01
         
-        # Query AIS positions
-        print(f"Querying AIS data for {len(detections)} detections...")
-        print(f"  Time window: {query_start} to {query_end}")
-        print(f"  Bounding box: ({min_lat}, {min_lon}) to ({max_lat}, {max_lon})")
         
         ais_positions = self.provider.query_positions(
             start_time=query_start,
@@ -70,8 +66,6 @@ class AISMatcher:
             min_lon=min_lon,
             max_lon=max_lon
         )
-        
-        print(f"  Found {len(ais_positions)} AIS positions")
         
         # Match each detection with closest AIS position
         matches = []
@@ -98,9 +92,6 @@ class AISMatcher:
                             best_match = AISMatch(i, ais_pos, distance)
             
             matches.append(best_match)
-        
-        matched_count = sum(1 for m in matches if m is not None)
-        print(f"Matched {matched_count} out of {len(detections)} detections")
         
         return matches
     

@@ -131,11 +131,16 @@ class DatalasticProvider(AISProvider):
                         )
                         positions.append(position)
         
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                 pass
+            else:
+                 pass
         except requests.exceptions.RequestException as e:
-            print(f"Error querying Datalastic API: {e}")
+            pass
             # Return empty list on error
         except (KeyError, ValueError, TypeError) as e:
-            print(f"Error parsing Datalastic API response: {e}")
+            pass
         
         return positions
 
@@ -189,5 +194,4 @@ class LocalCSVProvider(AISProvider):
             return positions
         
         except Exception as e:
-            print(f"Error reading local CSV: {e}")
             return []
