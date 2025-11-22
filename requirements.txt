@@ -13,3 +13,5 @@ Pillow
 tqdm
 torch
 botocore
+streamlit
+plotly
