@@ -6,6 +6,7 @@ This project provides an "edge-ready" workflow for performing object detection o
 
 - `main.py`: Entry point script that runs the full pipeline (Environment Check -> Download -> Inference -> Visualization).
 - `Edge_Ready_Object_Detection_Demo_vFinal.ipynb`: A Jupyter notebook demonstrating the workflow.
+- `colab_training.ipynb`: A notebook for retraining the model on Google Colab/cloud GPUs.
 - `src/`: Source code modules.
     - `config.py`: Configuration constants (S3 paths, model settings).
     - `data_loader.py`: S3 file listing and parallel downloading.
@@ -51,15 +52,24 @@ This script will:
 4.  Run inference on a subset of images.
 5.  Generate visualization plots and save an interactive map to `detection_map.html`.
 
-### Running the Notebook
+### Retraining the Model (Cloud)
 
-You can also run the interactive Jupyter notebook:
+To retrain the model for better performance or different classes, use the provided `colab_training.ipynb` notebook.
 
-```bash
-jupyter notebook Edge_Ready_Object_Detection_Demo_vFinal.ipynb
-```
+**Why run in the cloud?**
+Training deep learning models requires significant computational power (GPUs). Local machines (especially those without NVIDIA GPUs or with complex driver setups like MPS on Mac) can be slow or unstable for training.
 
-The notebook has been refactored to use the modular code in `src/` but retains the original flow and explanations.
+**How to run:**
+1.  Open [Google Colab](https://colab.research.google.com).
+2.  Upload `colab_training.ipynb`.
+3.  Set the runtime to **GPU** (Runtime > Change runtime type > T4 GPU).
+4.  Run all cells. The notebook will:
+    - Download the SpaceNet dataset directly to the cloud instance.
+    - Convert labels to the correct format.
+    - Train a YOLOv8-Nano model.
+    - Zip the trained weights for you to download.
+
+After training, you can update `MODEL_REPO_ID` or `MODEL_FILENAME` in `src/config.py` to use your new custom model.
 
 ## Custom Analytics
 
