@@ -1,6 +1,8 @@
 """
 Spatial-temporal matching of detected ships with AIS positions.
 """
+# Optimized for silent operation (no prints)
+
 
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
