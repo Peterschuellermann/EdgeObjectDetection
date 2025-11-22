@@ -24,3 +24,16 @@ VERBOSE = 0
 # Visualization
 DST_CRS = 'EPSG:4326'
 
+# AIS Configuration
+AIS_PROVIDER = "datalastic"  # Options: "datalastic", "local_csv"
+AIS_API_KEY = os.getenv("AIS_API_KEY", "")  # Set via environment variable or config
+ROTTERDAM_BBOX = {
+    "min_lon": 4.0,
+    "max_lon": 4.5,
+    "min_lat": 51.85,
+    "max_lat": 51.95
+}
+AIS_MATCH_DISTANCE_M = 100  # meters - distance threshold for matching
+AIS_TIME_BUFFER_SEC = 300   # ±5 minutes buffer around image time range
+AIS_LOCAL_CSV_PATH = ""  # Path to local CSV file if using local_csv provider
+
