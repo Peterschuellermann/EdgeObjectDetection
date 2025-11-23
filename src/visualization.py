@@ -240,6 +240,16 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
         except Exception as e:
             print(f"Failed to add image {tiff_path} to map: {e}")
 
+    # Filter detections to only show ships, vessels, and boats as requested
+    if geo_detections:
+        valid_labels = ['ship', 'vessel', 'boat']
+        geo_detections = [
+            det for det in geo_detections 
+            if any(l in str(det.get('label', '')).lower() for l in valid_labels)
+        ]
+        if not geo_detections:
+            print("No ship/vessel/boat detections to add to map.")
+
     # Add detections
     if geo_detections:
         gdf = gpd.GeoDataFrame(geo_detections, crs=source_crs)
