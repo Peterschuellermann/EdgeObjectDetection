@@ -26,7 +26,7 @@ DST_CRS = 'EPSG:4326'
 MAPS_OUTPUT_DIR = "maps"
 
 # AIS Configuration
-AIS_PROVIDER = "datalastic"  # Options: "datalastic", "local_csv"
+AIS_PROVIDER = "local_csv"  # Options: "datalastic", "local_csv"
 # Read from environment variable, or use hardcoded value as fallback
 AIS_API_KEY = os.getenv("AIS_API_KEY", "9aac3244-93b4-491e-b7b0-b0bcd70df0de")
 ROTTERDAM_BBOX = {
@@ -37,5 +37,5 @@ ROTTERDAM_BBOX = {
 }
 AIS_MATCH_DISTANCE_M = 100  # meters - distance threshold for matching
 AIS_TIME_BUFFER_SEC = 300   # ±5 minutes buffer around image time range
-AIS_LOCAL_CSV_PATH = ""  # Path to local CSV file if using local_csv provider
+AIS_LOCAL_CSV_PATH = "ais_data.csv"  # Path to local CSV file if using local_csv provider
 
