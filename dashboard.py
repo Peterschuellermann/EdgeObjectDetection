@@ -77,6 +77,11 @@ selected_labels = st.sidebar.multiselect("Select Labels", all_labels, default=de
 if selected_labels:
     df = df[df['label'].isin(selected_labels)]
 
+# Check if dataframe is empty after filtering
+if df.empty:
+    st.info("No detections match the selected filters. Please adjust your Run ID and Label selections.")
+    st.stop()
+
 # Score Filter
 min_score, max_score = float(df['score'].min()), float(df['score'].max())
 score_range = st.sidebar.slider("Confidence Score", min_score, max_score, (min_score, max_score))
@@ -165,10 +170,11 @@ try:
                         '''
                         
                         # Insert the script right after the opening <head> tag or before </head>
+                        # Use count=1 to only replace the first occurrence, preventing multiple injections
                         if '</head>' in map_html:
-                            map_html = map_html.replace('</head>', filter_script + '</head>')
+                            map_html = map_html.replace('</head>', filter_script + '</head>', 1)
                         elif '<body' in map_html:
-                            map_html = map_html.replace('<body', filter_script + '<body')
+                            map_html = map_html.replace('<body', filter_script + '<body', 1)
                         else:
                             # If no head/body tags, prepend
                             map_html = filter_script + map_html
