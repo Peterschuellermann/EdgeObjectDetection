@@ -9,11 +9,22 @@ BUCKET = 'spacenet-dataset'
 PREFIX = 'spacenet/SN6_buildings/train/AOI_11_Rotterdam/PS-RGB/'
 LOCAL_DIR = os.path.join(str(Path.home()), "rotterdam_opt")
 
+import torch
+
 # Model Configuration
 MODEL_REPO_ID = "pauhidalgoo/yolov8-DIOR"
 MODEL_FILENAME = "DIOR_yolov8n_backbone.pt"
 MODEL_CONFIDENCE_THRESHOLD = 0.4
-MODEL_DEVICE = "cpu"
+
+def get_device():
+    if torch.backends.mps.is_available():
+        return "mps"
+    elif torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+MODEL_DEVICE = get_device()
+print(f"Inference device selected: {MODEL_DEVICE}")
 
 # Inference Configuration
 SLICE_HEIGHT = 512
