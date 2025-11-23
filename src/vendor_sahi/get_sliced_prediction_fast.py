@@ -4,7 +4,7 @@ from time import perf_counter
 import numpy as np
 from sahi.prediction import PredictionResult, ObjectPrediction
 from sahi.slicing import slice_image
-from .predict_local import get_prediction, POSTPROCESS_NAME_TO_CLASS
+from .predict_local import get_prediction, get_batched_prediction, POSTPROCESS_NAME_TO_CLASS
 
 def get_sliced_prediction_fast(
     image,
@@ -75,34 +75,42 @@ def get_sliced_prediction_fast(
 
     object_prediction_list: list[ObjectPrediction] = []
 
-    # 3) Run model on each slice (no batching, no extra full-image pass)
-    for i in range(num_slices):
-        tile = slice_image_result.images[i]
-        shift_x, shift_y = slice_image_result.starting_pixels[i]
-        full_h = slice_image_result.original_image_height
-        full_w = slice_image_result.original_image_width
+    # 3) Run model on slices (batched)
+    BATCH_SIZE = 16  # Tunable
+    
+    full_h = slice_image_result.original_image_height
+    full_w = slice_image_result.original_image_width
 
-        # Use our local get_prediction to run the model and convert predictions
-        pred_result = get_prediction(
-            image=tile,
+    for start_idx in range(0, num_slices, BATCH_SIZE):
+        end_idx = min(start_idx + BATCH_SIZE, num_slices)
+        
+        batch_images = []
+        shift_amounts = []
+        
+        for i in range(start_idx, end_idx):
+            batch_images.append(slice_image_result.images[i])
+            shift_amounts.append(slice_image_result.starting_pixels[i])
+            
+        # Run batch
+        batch_result = get_batched_prediction(
+            images=batch_images,
             detection_model=detection_model,
-            shift_amount=[shift_x, shift_y],
+            shift_amounts=shift_amounts,
             full_shape=[full_h, full_w],
-            postprocess=None,  # we'll do final postprocess once at the end
-            verbose=0,
             exclude_classes_by_name=exclude_classes_by_name,
             exclude_classes_by_id=exclude_classes_by_id,
         )
 
         # accumulate timings
-        d = pred_result.durations_in_seconds or {}
-        # 'prediction' in get_prediction is model forward time
+        d = batch_result.durations_in_seconds or {}
         durations_in_seconds["prediction"] += d.get("prediction", 0.0)
-        durations_in_seconds["forward"] += d.get("forward", d.get("prediction", 0.0))
-        durations_in_seconds["postprocess"] += d.get("postprocess", 0.0)  # convert+filter (cheap)
+        durations_in_seconds["forward"] += d.get("prediction", 0.0)
+        durations_in_seconds["postprocess"] += d.get("postprocess", 0.0)
 
-        # predictions are still in slice coords; shift them to full-image coords
-        for obj_pred in pred_result.object_prediction_list:
+        # predictions are still in slice coords (conceptually) or shifted?
+        # Since we follow get_prediction logic which calls convert(shift), 
+        # and existing code called get_shifted_object_prediction() on those, we do the same.
+        for obj_pred in batch_result.object_prediction_list:
             if obj_pred:
                 object_prediction_list.append(obj_pred.get_shifted_object_prediction())
 

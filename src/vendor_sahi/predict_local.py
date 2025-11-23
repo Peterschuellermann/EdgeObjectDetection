@@ -164,6 +164,64 @@ def get_prediction(
     )
 
 
+def get_batched_prediction(
+    images,
+    detection_model,
+    shift_amounts: list,
+    full_shape=None,
+    verbose: int = 0,
+    exclude_classes_by_name: list[str] | None = None,
+    exclude_classes_by_id: list[int] | None = None,
+) -> PredictionResult:
+    """
+    Perform batched prediction using the underlying model directly (optimized for YOLOv8).
+    """
+    durations_in_seconds = {"prediction": 0.0, "postprocess": 0.0}
+
+    # 1. Prepare images
+    batch_images = []
+    for img in images:
+        pil_img = read_image_as_pil(img)
+        batch_images.append(np.ascontiguousarray(pil_img))
+
+    # 2. Prediction
+    t0 = time.time()
+    # Assumes detection_model is UltralyticsDetectionModel or has .model attribute that accepts batch
+    # and .device / .confidence_threshold
+    results = detection_model.model(
+        batch_images,
+        verbose=False,
+        device=detection_model.device,
+        conf=detection_model.confidence_threshold
+    )
+    durations_in_seconds["prediction"] = time.time() - t0
+
+    object_prediction_list = []
+
+    # 3. Convert results
+    t0 = time.time()
+    for i, result in enumerate(results):
+        # Inject state to reuse conversion logic
+        detection_model.original_predictions = [result]
+        
+        detection_model.convert_original_predictions(
+            shift_amount=shift_amounts[i],
+            full_shape=full_shape
+        )
+        
+        current_preds = detection_model.object_prediction_list
+        current_preds = filter_predictions(current_preds, exclude_classes_by_name, exclude_classes_by_id)
+        object_prediction_list.extend(current_preds)
+
+    durations_in_seconds["postprocess"] = time.time() - t0
+
+    return PredictionResult(
+        image=None, 
+        object_prediction_list=object_prediction_list, 
+        durations_in_seconds=durations_in_seconds
+    )
+
+
 def get_sliced_prediction(
     image,
     detection_model=None,
