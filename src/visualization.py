@@ -280,8 +280,15 @@ def create_map(image_paths, geo_detections, output_file="map.html", day_label=No
             label_lower = str(label).lower()
             is_ship = any(key in label_lower for key in ['ship', 'vessel', 'boat'])
             
-            if is_ship and ais_matched:
-                return 'green'
+            if is_ship:
+                if ais_matched:
+                    return 'green'
+                # Color high-confidence ships green as well
+                try:
+                    if float(props.get('score', 0)) > 0.7:
+                        return 'green'
+                except (ValueError, TypeError):
+                    pass
             
             return get_color_for_label(label)
         
